@@ -1,0 +1,70 @@
+INTENT_TEST_CASES = [
+    {"query": "找出最搞笑的5个片段", "expected_intent": "highlight_search", "expected_types": ["comedy"], "expected_count": 5},
+    {"query": "只要8分以上的动作戏", "expected_intent": "filter_request", "expected_types": ["action"], "expected_threshold": 8.0},
+    {"query": "感人场景有哪些", "expected_intent": "highlight_search", "expected_types": ["emotion"]},
+    {"query": "总结一下这个视频", "expected_intent": "summary_request", "expected_types": []},
+    {"query": "导出这些片段", "expected_intent": "export_request", "expected_types": []},
+    {"query": "哪个片段更感人", "expected_intent": "comparison_query", "expected_types": ["emotion"]},
+    {"query": "find the best action scenes", "expected_intent": "highlight_search", "expected_types": ["action"]},
+    {"query": "只要悬疑片段", "expected_intent": "filter_request", "expected_types": ["suspense"]},
+    {"query": "前3个名场面", "expected_intent": "highlight_search", "expected_count": 3},
+    {"query": "超过7分的精彩片段", "expected_intent": "filter_request", "expected_threshold": 7.0},
+    {"query": "有没有打斗场面", "expected_intent": "highlight_search", "expected_types": ["action"]},
+    {"query": "搞笑的片段", "expected_intent": "highlight_search", "expected_types": ["comedy"]},
+    {"query": "下载这些视频", "expected_intent": "export_request"},
+    {"query": "比较第一段和第二段", "expected_intent": "comparison_query"},
+    {"query": "filter only drama scenes above 6", "expected_intent": "filter_request", "expected_types": ["drama"]},
+    {"query": "最震撼的画面", "expected_intent": "highlight_search", "expected_types": [], "expected_boosts": ["visual_impact"]},
+    {"query": "温馨浪漫的片段", "expected_intent": "highlight_search", "expected_types": ["emotion"]},
+    {"query": "紧张刺激的悬疑场景", "expected_intent": "highlight_search", "expected_types": ["suspense"]},
+    {"query": "帮我找经典的镜头", "expected_intent": "highlight_search", "expected_boosts": ["memorability"]},
+    {"query": "7.5分以上的喜剧", "expected_intent": "filter_request", "expected_types": ["comedy"], "expected_threshold": 7.5},
+    {"query": "提取动作场面", "expected_intent": "export_request", "expected_types": ["action"]},
+    {"query": "show me the funniest moments", "expected_intent": "highlight_search", "expected_types": ["comedy"]},
+    {"query": "至少6分的片段", "expected_intent": "filter_request", "expected_threshold": 6.0},
+    {"query": "这个视频讲了什么", "expected_intent": "summary_request"},
+    {"query": "裁剪出高光时刻", "expected_intent": "export_request"},
+    {"query": "找出戏剧冲突", "expected_intent": "highlight_search", "expected_types": ["drama"]},
+    {"query": "top 10 highlights", "expected_intent": "highlight_search", "expected_count": 10},
+    {"query": "保留情感高潮", "expected_intent": "filter_request", "expected_types": ["emotion"]},
+    {"query": "战争场面", "expected_intent": "highlight_search", "expected_types": ["action"]},
+    {"query": "overview of the video", "expected_intent": "summary_request"},
+]
+
+SCORING_TEST_CASES = [
+    {
+        "description": "动作片打斗场景",
+        "system_scores": {"visual_impact": 8.5, "cinematography": 6.0, "emotion_intensity": 5.0, "facial_expression": 4.0, "plot_importance": 6.5, "action_intensity": 9.0, "audio_energy": 8.0, "memorability": 7.0},
+        "human_score": 7.2,
+    },
+    {
+        "description": "喜剧夸张表情",
+        "system_scores": {"visual_impact": 5.0, "cinematography": 4.0, "emotion_intensity": 6.0, "facial_expression": 9.5, "plot_importance": 4.0, "action_intensity": 3.0, "audio_energy": 5.0, "memorability": 8.0},
+        "human_score": 6.8,
+    },
+    {
+        "description": "感人泪点场景",
+        "system_scores": {"visual_impact": 6.0, "cinematography": 7.0, "emotion_intensity": 9.0, "facial_expression": 8.0, "plot_importance": 8.5, "action_intensity": 2.0, "audio_energy": 6.0, "memorability": 8.5},
+        "human_score": 7.8,
+    },
+    {
+        "description": "悬疑紧张氛围",
+        "system_scores": {"visual_impact": 7.0, "cinematography": 8.0, "emotion_intensity": 7.5, "facial_expression": 5.0, "plot_importance": 9.0, "action_intensity": 4.0, "audio_energy": 7.5, "memorability": 6.5},
+        "human_score": 7.0,
+    },
+    {
+        "description": "平淡对话场景",
+        "system_scores": {"visual_impact": 2.0, "cinematography": 3.0, "emotion_intensity": 3.0, "facial_expression": 2.0, "plot_importance": 4.0, "action_intensity": 1.0, "audio_energy": 2.0, "memorability": 2.0},
+        "human_score": 2.5,
+    },
+]
+
+PIPELINE_SMOKE_TESTS = [
+    {"name": "scene_detector_basic", "description": "场景检测模块基本功能"},
+    {"name": "keyframe_extractor_basic", "description": "关键帧提取基本功能"},
+    {"name": "vlm_analyzer_parse", "description": "VLM结果JSON解析"},
+    {"name": "intent_recognizer_basic", "description": "意图识别基本功能"},
+    {"name": "pipeline_weighted_score", "description": "加权评分计算"},
+    {"name": "pipeline_merge_consecutive", "description": "连续片段合并"},
+    {"name": "pipeline_filter_similar", "description": "相似场景去重"},
+]
