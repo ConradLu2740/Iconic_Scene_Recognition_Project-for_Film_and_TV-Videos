@@ -17,6 +17,41 @@ MERGE_TIME_THRESHOLD = 3.0
 MERGE_SCORE_THRESHOLD = 1.5
 SIMILARITY_THRESHOLD = 0.6
 
+DEFAULT_WEIGHTS = {
+    "visual_impact": 3,
+    "cinematography": 2,
+    "emotion_intensity": 3,
+    "facial_expression": 3,
+    "plot_importance": 2,
+    "action_intensity": 2,
+    "audio_energy": 2,
+    "memorability": 2,
+}
+
+
+def _compute_weighted_score(scores: dict, dimension_boosts: dict | None = None) -> float:
+    """根据维度权重计算加权总分，支持意图驱动的动态权重调整
+
+    当 dimension_boosts 非空时，将对应维度的默认权重乘以提升倍数，
+    使得意图识别结果能够影响最终排序。
+
+    Args:
+        scores: 各维度原始分数字典
+        dimension_boosts: 维度权重提升映射，如 {"action_intensity": 1.5}
+
+    Returns:
+        加权总分，保留两位小数
+    """
+    weights = DEFAULT_WEIGHTS.copy()
+    if dimension_boosts:
+        for dim, boost in dimension_boosts.items():
+            if dim in weights:
+                weights[dim] = round(weights[dim] * boost, 2)
+
+    total_weight = sum(weights.values())
+    weighted_sum = sum(scores.get(dim, 0) * w for dim, w in weights.items())
+    return round(weighted_sum / total_weight, 2)
+
 
 def _merge_consecutive_highlights(highlights: list[dict]) -> list[dict]:
     """合并时间上连续且评分相近的高分片段
@@ -137,7 +172,15 @@ def _filter_by_scores(highlights: list[dict], score_filters: dict) -> list[dict]
     return filtered
 
 
-def analyze_video(video_path: str, progress_callback=None, type_filter: list[str] = None, score_filters: dict = None) -> dict:
+def analyze_video(
+    video_path: str,
+    progress_callback=None,
+    type_filter: list[str] = None,
+    score_filters: dict = None,
+    dimension_boosts: dict | None = None,
+    count_limit: int | None = None,
+    score_threshold: float | None = None,
+) -> dict:
     """执行完整的视频"名场面"分析流水线
 
     流程: MD5去重检查 → 场景分割 → 关键帧提取 → VLM评分 → 语音转写 → 筛选结果 → 合并去重
@@ -145,12 +188,18 @@ def analyze_video(video_path: str, progress_callback=None, type_filter: list[str
     Args:
         video_path: 视频文件路径
         progress_callback: 进度回调函数，接收(step_name, current, total)参数
+        type_filter: 场景类型过滤列表
+        score_filters: 各维度最低分数要求
+        dimension_boosts: 意图驱动的维度权重提升，如 {"action_intensity": 1.5}
+        count_limit: 返回名场面数量上限，None表示不限制
+        score_threshold: 名场面评分阈值，None使用全局默认值
 
     Returns:
         包含名场面列表的完整分析结果字典
     """
     video_path = Path(video_path)
     video_name = video_path.name
+    effective_threshold = score_threshold if score_threshold is not None else SCORE_THRESHOLD
 
     md5_hash = compute_file_md5(video_path)
     cached = get_cached_result(md5_hash)
@@ -216,13 +265,16 @@ def analyze_video(video_path: str, progress_callback=None, type_filter: list[str
                 "action_intensity": vlm_result.action_intensity,
                 "audio_energy": vlm_result.audio_energy,
                 "memorability": vlm_result.memorability,
-                "total": round(vlm_result.total_score, 2),
             },
             "type": vlm_result.type,
             "description": vlm_result.description,
         }
 
-        if vlm_result.total_score >= SCORE_THRESHOLD:
+        highlight["scores"]["total"] = _compute_weighted_score(
+            highlight["scores"], dimension_boosts
+        )
+
+        if highlight["scores"]["total"] >= effective_threshold:
             highlights.append(highlight)
 
     if progress_callback:
@@ -257,6 +309,11 @@ def analyze_video(video_path: str, progress_callback=None, type_filter: list[str
     highlights = _filter_by_scores(highlights, score_filters or {})
     logger.info(f"分数过滤后共 {len(highlights)} 个片段")
 
+    highlights.sort(key=lambda h: h["scores"]["total"], reverse=True)
+    if count_limit and count_limit > 0:
+        highlights = highlights[:count_limit]
+        logger.info(f"按数量限制截取前 {count_limit} 个片段")
+
     for i, hl in enumerate(highlights):
         hl["id"] = i + 1
 
@@ -268,12 +325,14 @@ def analyze_video(video_path: str, progress_callback=None, type_filter: list[str
         "generated_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
         "analysis_config": {
             "vlm_model": "qwen-vl-plus",
-            "score_threshold": SCORE_THRESHOLD,
+            "score_threshold": effective_threshold,
             "total_scenes": len(scenes),
             "highlights_before_process": raw_highlights_count,
             "whisper_transcribed": transcript is not None,
             "type_filter": type_filter,
             "score_filters": score_filters,
+            "dimension_boosts": dimension_boosts,
+            "count_limit": count_limit,
         },
         "highlights": highlights,
     }

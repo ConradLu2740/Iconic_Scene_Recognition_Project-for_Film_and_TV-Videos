@@ -14,6 +14,7 @@ from app.config import (
     ALLOWED_TYPES,
 )
 from app.services.highlight_pipeline import analyze_video
+from app.services.intent_recognizer import recognize_intent, IntentType
 from app.services.video_clipper import extract_clips_from_highlights
 from app.utils.video_utils import validate_video_file
 
@@ -27,6 +28,81 @@ _current_video_path = None
 _current_result = None
 
 
+def _apply_intent_to_ui(intent_result):
+    """将意图识别结果转换为 Gradio UI 组件的更新操作
+
+    根据识别出的意图类型、场景类型、维度权重等，
+    自动填充对应的阈值、类型选择和维度滑块。
+
+    Args:
+        intent_result: RecognizedIntent 意图识别结果
+
+    Returns:
+        tuple: (threshold, type_filter, facial, emotion, action, memorability, intent_info)
+    """
+    threshold = SCORE_THRESHOLD
+    type_filter = intent_result.scene_types if intent_result.scene_types else []
+    facial_min = 0.0
+    emotion_min = 0.0
+    action_min = 0.0
+    memorability_min = 0.0
+
+    if intent_result.score_threshold is not None:
+        threshold = intent_result.score_threshold
+
+    boosts = intent_result.dimension_boosts
+    if boosts.get("facial_expression", 1.0) > 1.0:
+        facial_min = 5.0
+    if boosts.get("emotion_intensity", 1.0) > 1.0:
+        emotion_min = 5.0
+    if boosts.get("action_intensity", 1.0) > 1.0:
+        action_min = 5.0
+    if boosts.get("memorability", 1.0) > 1.0:
+        memorability_min = 5.0
+
+    intent_info = (
+        f"🧠 意图识别: 类型={intent_result.intent_type.value}, "
+        f"场景={intent_result.scene_types or '全部'}, "
+        f"置信度={intent_result.confidence:.0%}"
+    )
+    if intent_result.dimension_boosts:
+        boost_desc = ", ".join(f"{k}×{v}" for k, v in intent_result.dimension_boosts.items())
+        intent_info += f"\n📊 维度增强: {boost_desc}"
+    if intent_result.count_limit:
+        intent_info += f"\n🔢 数量限制: 前{intent_result.count_limit}个"
+
+    return threshold, type_filter, facial_min, emotion_min, action_min, memorability_min, intent_info
+
+
+def parse_intent_query(query):
+    """解析用户自然语言查询，返回意图识别结果和UI参数填充值
+
+    Args:
+        query: 用户输入的自然语言查询
+
+    Returns:
+        tuple: Gradio组件更新值列表
+    """
+    if not query or not query.strip():
+        return (
+            gr.update(), gr.update(), gr.update(), gr.update(),
+            gr.update(), gr.update(), "💡 请输入你的需求，如「找出最搞笑的5个片段」"
+        )
+
+    intent = recognize_intent(query)
+    threshold, type_filter, facial, emotion, action, memorability, info = _apply_intent_to_ui(intent)
+
+    return (
+        gr.update(value=threshold),
+        gr.update(value=type_filter),
+        gr.update(value=facial),
+        gr.update(value=emotion),
+        gr.update(value=action),
+        gr.update(value=memorability),
+        info,
+    )
+
+
 def process_video(
     video_file,
     threshold,
@@ -36,8 +112,13 @@ def process_video(
     emotion_min,
     action_min,
     memorability_min,
+    intent_query,
 ):
     """处理上传的视频文件，执行名场面分析并返回结果
+
+    支持两种模式：
+    1. 手动配置模式：通过滑块和复选框设置参数
+    2. 意图驱动模式：通过自然语言输入，自动映射参数并应用维度权重增强
 
     Args:
         video_file: Gradio上传的视频文件路径
@@ -48,9 +129,10 @@ def process_video(
         emotion_min: 情感强度最低分数
         action_min: 动作强度最低分数
         memorability_min: 记忆点最低分数
+        intent_query: 用户自然语言意图查询
 
     Returns:
-        tuple: (结果JSON文本, 关键帧图片列表, 状态消息)
+        tuple: (结果JSON文本, 关键帧图片列表, 状态消息, 导出按钮状态)
     """
     global _current_video_path, _current_result
 
@@ -80,11 +162,26 @@ def process_video(
         "memorability": float(memorability_min),
     }
 
+    dimension_boosts = None
+    count_limit = None
+    effective_threshold = float(threshold)
+
+    if intent_query and intent_query.strip():
+        intent = recognize_intent(intent_query.strip())
+        if intent.intent_type != IntentType.UNKNOWN:
+            dimension_boosts = intent.dimension_boosts if intent.dimension_boosts else None
+            count_limit = intent.count_limit
+            if intent.score_threshold is not None:
+                effective_threshold = intent.score_threshold
+
     try:
         result = analyze_video(
             str(dest_path),
             type_filter=type_filter if type_filter else None,
             score_filters=score_filters if any(v > 0 for v in score_filters.values()) else None,
+            dimension_boosts=dimension_boosts,
+            count_limit=count_limit,
+            score_threshold=effective_threshold,
         )
         _current_video_path = str(dest_path)
         _current_result = result
@@ -111,6 +208,9 @@ def process_video(
     status = f"✅ 分析完成: 共{total_scenes}个场景, 检测到{highlight_count}个名场面"
     if whisper_ok:
         status += " (含语音字幕)"
+    if dimension_boosts:
+        boost_desc = ", ".join(f"{k}×{v}" for k, v in dimension_boosts.items())
+        status += f"\n🧠 意图增强: {boost_desc}"
 
     clip_btn = gr.update(visible=True) if highlight_count > 0 else gr.update(visible=False)
 
@@ -152,12 +252,12 @@ def export_clips():
 
 
 def build_ui() -> gr.Blocks:
-    """构建Gradio界面，包含视频上传、参数配置、结果展示和视频剪辑导出功能"""
+    """构建Gradio界面，包含意图识别、视频上传、参数配置、结果展示和视频剪辑导出功能"""
     with gr.Blocks(title="视频名场面检测器") as demo:
         gr.Markdown(
             "# 🎬 视频名场面检测器\n"
-            "上传视频 → 自动检测精彩片段 → 输出名场面JSON数据 + 视频片段导出\n"
-            "基于 PySceneDetect + 通义千问VL + Faster-Whisper 多模态分析"
+            "上传视频 → 自然语言描述需求 → 自动检测精彩片段 → 输出名场面数据 + 视频片段导出\n"
+            "基于 PySceneDetect + 通义千问VL + Faster-Whisper + 意图识别 多模态智能分析"
         )
 
         with gr.Row():
@@ -166,6 +266,22 @@ def build_ui() -> gr.Blocks:
                     label="📹 上传视频",
                     sources=["upload"],
                 )
+
+                gr.Markdown("### 🧠 智能意图输入")
+                intent_input = gr.Textbox(
+                    label="💬 用自然语言描述你的需求",
+                    placeholder="例如：找出最搞笑的5个片段 / 只要8分以上的动作戏 / 感人的场景",
+                    lines=2,
+                    info="输入后点击「理解意图」，系统自动填充下方参数",
+                )
+                intent_parse_btn = gr.Button("🔍 理解意图", variant="secondary")
+                intent_info = gr.Textbox(
+                    label="意图识别结果",
+                    interactive=False,
+                    lines=3,
+                )
+
+                gr.Markdown("---")
                 threshold_slider = gr.Slider(
                     minimum=1.0,
                     maximum=10.0,
@@ -230,6 +346,17 @@ def build_ui() -> gr.Blocks:
                     object_fit="contain",
                 )
 
+        intent_parse_btn.click(
+            fn=parse_intent_query,
+            inputs=[intent_input],
+            outputs=[
+                threshold_slider, type_checkbox,
+                facial_slider, emotion_slider,
+                action_slider, memorability_slider,
+                intent_info,
+            ],
+        )
+
         analyze_btn.click(
             fn=process_video,
             inputs=[
@@ -241,6 +368,7 @@ def build_ui() -> gr.Blocks:
                 emotion_slider,
                 action_slider,
                 memorability_slider,
+                intent_input,
             ],
             outputs=[json_output, gallery, status_text, export_btn],
         )
@@ -254,13 +382,13 @@ def build_ui() -> gr.Blocks:
         gr.Markdown(
             "---\n"
             "### 使用说明\n"
+            "**🧠 智能模式（推荐）**：在「智能意图输入」框中用自然语言描述需求，点击「理解意图」自动配置参数\n\n"
+            "**手动模式**：直接调整下方滑块和选项\n\n"
             "1. 上传视频文件（支持 mp4/avi/mov/mkv 等格式）\n"
-            "2. 设置总分阈值（默认6.0，值越高筛选越严格）\n"
-            "3. 可选：设置类型过滤和维度分数过滤\n"
-            "4. 选择Whisper模型大小（越大越准确但越慢）\n"
-            "5. 点击「开始分析」，等待2-3分钟\n"
-            "6. 查看JSON结果和关键帧缩略图\n"
-            "7. 可选：点击「导出视频片段」下载名场面\n\n"
+            "2. 输入需求或手动设置参数\n"
+            "3. 点击「开始分析」，等待2-3分钟\n"
+            "4. 查看JSON结果和关键帧缩略图\n"
+            "5. 可选：点击「导出视频片段」下载名场面\n\n"
             "⚠️ 需要安装FFmpeg才能导出视频片段"
         )
 

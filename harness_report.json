@@ -1,0 +1,112 @@
+{
+  "timestamp": "2026-04-18T11:46:33Z",
+  "summary": {
+    "total": 40,
+    "passed": 36,
+    "failed": 4,
+    "pass_rate": "90.0%"
+  },
+  "intent_recognition": {
+    "total": 30,
+    "correct": 28,
+    "accuracy": 0.9333,
+    "macro_precision": 0.8214,
+    "macro_recall": 0.7381,
+    "macro_f1": 0.7775,
+    "per_class": {
+      "comparison_query": {
+        "tp": 1,
+        "fp": 0,
+        "fn": 1,
+        "precision": 1.0,
+        "recall": 0.5,
+        "support": 2
+      },
+      "export_request": {
+        "tp": 4,
+        "fp": 0,
+        "fn": 0,
+        "precision": 1.0,
+        "recall": 1.0,
+        "support": 4
+      },
+      "filter_request": {
+        "tp": 7,
+        "fp": 0,
+        "fn": 0,
+        "precision": 1.0,
+        "recall": 1.0,
+        "support": 7
+      },
+      "highlight_search": {
+        "tp": 13,
+        "fp": 1,
+        "fn": 1,
+        "precision": 0.9286,
+        "recall": 0.9286,
+        "support": 14
+      },
+      "summary_request": {
+        "tp": 3,
+        "fp": 0,
+        "fn": 0,
+        "precision": 1.0,
+        "recall": 1.0,
+        "support": 3
+      },
+      "unknown": {
+        "tp": 0,
+        "fp": 1,
+        "fn": 0,
+        "precision": 0.0,
+        "recall": 0.0,
+        "support": 0
+      }
+    }
+  },
+  "scoring_consistency": {
+    "pearson_r": 0.9881,
+    "rmse": 0.6549,
+    "mae": 0.56,
+    "sample_count": 5
+  },
+  "smoke_tests": [
+    {
+      "name": "pipeline_weighted_score",
+      "passed": true,
+      "detail": "基础分=6.11, 增强visual_impact后=6.24, 增强高分维度后应更高",
+      "duration_ms": 0.02
+    },
+    {
+      "name": "pipeline_merge_consecutive",
+      "passed": true,
+      "detail": "输入3个片段, 合并后2个, 期望2个",
+      "duration_ms": 0.01
+    },
+    {
+      "name": "pipeline_filter_similar",
+      "passed": true,
+      "detail": "输入3个片段, 去重后2个, 期望2个",
+      "duration_ms": 0.01
+    },
+    {
+      "name": "intent_recognizer_basic",
+      "passed": true,
+      "detail": "意图=highlight_search, 类型=['comedy'], 数量=5",
+      "duration_ms": 0.2
+    },
+    {
+      "name": "highlight_detection_metrics",
+      "passed": true,
+      "detail": "P=0.6667, R=0.6667, F1=0.6667",
+      "duration_ms": 0.03
+    }
+  ],
+  "benchmarks": {
+    "intent_recognition_per_call_ms": 0.175,
+    "weighted_score_per_call_ms": 0.003,
+    "merge_50_highlights_per_call_ms": 0.021,
+    "filter_similar_50_per_call_ms": 0.23,
+    "iterations": 1000
+  }
+}
